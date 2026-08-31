@@ -82,6 +82,46 @@ def add_rolling_features(log: pd.DataFrame, window: int = ROLLING_WINDOW) -> pd.
     return log
 
 
+def get_latest_team_form(log: pd.DataFrame, window: int = ROLLING_WINDOW) -> pd.DataFrame:
+    """
+    For LIVE PREDICTION, not training. Returns each team's current form
+    as of right now -- i.e. rolling stats over their last `window`
+    matches INCLUDING the most recent one they actually played (no shift,
+    since that match has already happened and its result is real
+    information we have going into their next, not-yet-played fixture).
+
+    Also reports how many matches of history each team actually has, so
+    you can flag teams with a thin sample (e.g. a club newly promoted to
+    the league with no prior top-flight history at all).
+    """
+    log = log.sort_values(["Team", "Date"]).copy()
+    grouped = log.groupby("Team", group_keys=False)
+
+    def unshifted_roll(col, agg="mean"):
+        roller = grouped[col].rolling(window, min_periods=1)
+        return roller.agg(agg).reset_index(level=0, drop=True)
+
+    log["avg_goals_scored"] = unshifted_roll("GF")
+    log["avg_goals_conceded"] = unshifted_roll("GA")
+    log["avg_shots"] = unshifted_roll("Shots")
+    log["avg_shots_on_target"] = unshifted_roll("SOT")
+    log["form_points_last5"] = unshifted_roll("Points", agg="sum")
+
+    match_counts = log.groupby("Team").size().rename("matches_of_history")
+
+    latest = (
+        log.sort_values("Date")
+        .groupby("Team")
+        .tail(1)
+        .set_index("Team")[[
+            "avg_goals_scored", "avg_goals_conceded",
+            "avg_shots", "avg_shots_on_target", "form_points_last5",
+        ]]
+        .join(match_counts)
+    )
+    return latest
+
+
 def build_fixture_features(matches: pd.DataFrame, log: pd.DataFrame) -> pd.DataFrame:
     """Merge each team's pre-match rolling features back onto fixture rows."""
     feature_cols = [
@@ -128,6 +168,44 @@ def build_dataset() -> pd.DataFrame:
     print(f"\nTarget distribution:\n{dataset['FTR'].value_counts(normalize=True).round(3) * 100}")
 
     return dataset
+
+
+def compute_latest_team_form(matches: pd.DataFrame, window: int = ROLLING_WINDOW) -> pd.DataFrame:
+    """
+    Given a combined match history (historical seasons + matches played so
+    far this season), return each team's CURRENT rolling form -- i.e. the
+    feature values that would apply to that team's next, not-yet-played
+    match. Used for live prediction on upcoming fixtures.
+
+    Returns a DataFrame indexed by team name with columns:
+    avg_goals_scored, avg_goals_conceded, avg_shots, avg_shots_on_target,
+    form_points_last5.
+    """
+    log = build_team_match_log(matches)
+    log = add_rolling_features(log, window=window)
+
+    # After sorting by (Team, Date), the LAST row already has its rolling
+    # features computed from that team's most recent `window` matches --
+    # but those features describe the match in that row, not the *next*
+    # one. We want one step further forward: take each team's most recent
+    # match, then compute the window average over their last `window`
+    # matches INCLUDING that one (no shift needed here, since this isn't
+    # attached to a specific future match yet).
+    latest = (
+        log.sort_values("Date")
+        .groupby("Team")
+        .tail(window)
+        .groupby("Team")
+        .agg(
+            avg_goals_scored=("GF", "mean"),
+            avg_goals_conceded=("GA", "mean"),
+            avg_shots=("Shots", "mean"),
+            avg_shots_on_target=("SOT", "mean"),
+            form_points_last5=("Points", "sum"),
+            last_match_date=("Date", "max"),
+        )
+    )
+    return latest
 
 
 if __name__ == "__main__":
