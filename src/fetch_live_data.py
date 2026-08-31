@@ -89,9 +89,23 @@ def fetch_current_season_results() -> pd.DataFrame:
     """
     Downloads the current season's played matches (with shots data) from
     football-data.co.uk. Same column schema as our historical training CSVs.
+
+    This one endpoint has been observed to be slow/flaky at times, so we
+    retry once with a longer timeout before giving up and letting the
+    caller fall back to historical-only data.
     """
-    response = requests.get(CURRENT_SEASON_CSV_URL, timeout=15)
-    response.raise_for_status()
+    last_error = None
+    for attempt, timeout in enumerate([20, 30], start=1):
+        try:
+            response = requests.get(CURRENT_SEASON_CSV_URL, timeout=timeout)
+            response.raise_for_status()
+            break
+        except requests.exceptions.RequestException as e:
+            last_error = e
+            if attempt == 1:
+                print(f"football-data.co.uk fetch attempt {attempt} failed ({e}), retrying...")
+    else:
+        raise last_error
 
     df = pd.read_csv(StringIO(response.text))
     df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
