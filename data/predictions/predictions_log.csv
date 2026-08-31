@@ -1,0 +1,12 @@
+prediction_made_on,match_date,home_team,away_team,predicted_unweighted,predicted_balanced,prob_home_win,prob_draw,prob_away_win,actual_result
+2026-08-31,2026-08-31,Aston Villa,Arsenal,A,A,0.113,0.265,0.622,
+2026-08-31,2026-09-04,Ipswich,Liverpool,A,A,0.303,0.216,0.481,
+2026-08-31,2026-09-05,Newcastle,Bournemouth,H,H,0.489,0.256,0.255,
+2026-08-31,2026-09-05,Nott'm Forest,Tottenham,H,A,0.414,0.216,0.37,
+2026-08-31,2026-09-05,Man City,Coventry,H,H,0.797,0.128,0.075,
+2026-08-31,2026-09-05,Brighton,Leeds,H,H,0.623,0.202,0.175,
+2026-08-31,2026-09-05,Brentford,Sunderland,H,H,0.471,0.241,0.288,
+2026-08-31,2026-09-05,Fulham,Crystal Palace,H,H,0.485,0.227,0.287,
+2026-08-31,2026-09-05,Hull,Aston Villa,H,A,0.437,0.221,0.342,
+2026-08-31,2026-09-06,Everton,Man United,A,A,0.238,0.212,0.55,
+2026-08-31,2026-09-06,Arsenal,Chelsea,H,H,0.759,0.123,0.118,
