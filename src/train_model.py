@@ -12,6 +12,7 @@ actually use this model (predicting matches that haven't happened yet).
 
 import pandas as pd
 import numpy as np
+import xgboost as xgb
 import joblib
 from pathlib import Path
 
@@ -113,7 +114,11 @@ def main():
         acc = evaluate(name, y_test, preds, label_encoder.classes_)
         draws_predicted = int((preds == "D").sum())
         results[name] = {"model": model, "accuracy": acc, "draws_predicted": draws_predicted}
-        joblib.dump(model, MODELS_DIR / f"{name}.pkl")
+        
+        if model_type == "xgb":
+          model.save_model(MODELS_DIR / f"{name}.json")
+        else:
+          joblib.dump(model, MODELS_DIR / f"{name}.pkl")
 
     joblib.dump(label_encoder, MODELS_DIR / "label_encoder.pkl")
     joblib.dump(FEATURE_COLS, MODELS_DIR / "feature_cols.pkl")
