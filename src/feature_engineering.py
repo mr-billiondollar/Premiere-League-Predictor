@@ -58,11 +58,24 @@ def build_team_match_log(matches: pd.DataFrame) -> pd.DataFrame:
     return log.sort_values(["Team", "Date"]).reset_index(drop=True)
 
 
+STALE_FORM_DAYS = 200  # matches predict_upcoming.py's live-pipeline threshold
+
+
 def add_rolling_features(log: pd.DataFrame, window: int = ROLLING_WINDOW) -> pd.DataFrame:
     """
     For each team, compute rolling averages over their last `window`
     matches -- shifted by 1 so today's match is never included in its
     own features.
+
+    Also nulls out rows where the team's previous match was more than
+    STALE_FORM_DAYS ago (relegation/promotion gaps -- e.g. Sunderland's
+    3,009-day gap between their 2016-17 relegation and 2025-26 return).
+    Without this, a team's first several matches back in the league
+    would use years-old "recent form," which is worse than having no
+    form data at all. This matches the staleness check predict_upcoming.py
+    already applies for live predictions -- found missing here after
+    investigating a live accuracy dip that concentrated on newly-returned
+    teams.
     """
     log = log.sort_values(["Team", "Date"]).copy()
     grouped = log.groupby("Team", group_keys=False)
@@ -78,6 +91,23 @@ def add_rolling_features(log: pd.DataFrame, window: int = ROLLING_WINDOW) -> pd.
     log["avg_shots"] = shifted_roll("Shots")
     log["avg_shots_on_target"] = shifted_roll("SOT")
     log["form_points_last5"] = shifted_roll("Points", agg="sum")
+
+    gap_days = grouped["Date"].diff().dt.days
+    stale = gap_days > STALE_FORM_DAYS
+    feature_cols = ["avg_goals_scored", "avg_goals_conceded",
+                     "avg_shots", "avg_shots_on_target", "form_points_last5"]
+
+    if stale.sum() > 0:
+        print(f"Found {stale.sum()} row(s) with stale pre-match form "
+              f"(>{STALE_FORM_DAYS} days since previous top-flight match)")
+        # Fill with the league-wide average rather than dropping the row
+        # entirely -- a first attempt (nulling + dropping) tested worse on
+        # the early-season backtest slice than doing nothing at all, likely
+        # because dropping removes the row's information rather than
+        # replacing bad information with a reasonable substitute.
+        league_avg = log[~stale][feature_cols].mean()
+        for col in feature_cols:
+            log.loc[stale, col] = league_avg[col]
 
     return log
 

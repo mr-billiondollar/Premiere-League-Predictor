@@ -11,10 +11,29 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parent))
-from fetch_live_data import fetch_current_season_results
+from fetch_live_data import fetch_current_season_results, fetch_finished_results
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PREDICTIONS_LOG = PROJECT_ROOT / "data" / "predictions" / "predictions_log.csv"
+
+
+def get_results_with_fallback():
+    """Try football-data.co.uk first (also used for form/features elsewhere).
+    If it's down, fall back to football-data.org -- an independent service
+    that's unlikely to be down at the same moment. If BOTH fail, surface a
+    clear message instead of crashing with a raw traceback."""
+    try:
+        return fetch_current_season_results()
+    except Exception as e:
+        print(f"\nPrimary source (football-data.co.uk) unavailable: {e}")
+        print("Trying fallback source (football-data.org)...")
+        try:
+            return fetch_finished_results()
+        except Exception as e2:
+            print(f"\nFallback source also unavailable: {e2}")
+            print("\nBoth result sources are down right now -- this is likely temporary.")
+            print("Your predictions log is unchanged. Try again in a few minutes.")
+            return None
 
 
 def main():
@@ -26,7 +45,12 @@ def main():
     log["match_date"] = pd.to_datetime(log["match_date"])
 
     print("Fetching latest results to check against predictions...")
-    results = fetch_current_season_results()
+    results = get_results_with_fallback()
+    if results is None:
+        return
+    if results.empty:
+        print("No finished matches found yet in the lookback window -- nothing to score.")
+        return
     results = results.rename(columns={"HomeTeam": "home_team", "AwayTeam": "away_team", "FTR": "actual"})
 
     # Match each prediction to its real result by date + teams

@@ -120,6 +120,57 @@ def fetch_current_season_results() -> pd.DataFrame:
     return df
 
 
+def fetch_finished_results(days_back: int = 21) -> pd.DataFrame:
+    """
+    FALLBACK source for checking results, used only when
+    fetch_current_season_results() (football-data.co.uk) is unavailable.
+    football-data.org is a different, independent service -- it being
+    down at the exact same moment as football-data.co.uk is unlikely.
+
+    We don't need shots data to check whether a W/D/L prediction was
+    correct, just the final result, so this simpler source is perfectly
+    sufficient for scoring even though it's not used for form/features.
+    """
+    api_key = os.environ.get("FOOTBALL_DATA_API_KEY")
+    if not api_key:
+        raise EnvironmentError(
+            "FOOTBALL_DATA_API_KEY not set -- can't use the football-data.org "
+            "fallback either. See fetch_upcoming_fixtures's docstring."
+        )
+
+    today = date.today()
+    params = {
+        "status": "FINISHED",
+        "dateFrom": (today - timedelta(days=days_back)).isoformat(),
+        "dateTo": today.isoformat(),
+    }
+    headers = {"X-Auth-Token": api_key}
+    url = f"{FOOTBALL_DATA_ORG_BASE}/competitions/PL/matches"
+
+    response = requests.get(url, headers=headers, params=params, timeout=15)
+    response.raise_for_status()
+    matches = response.json().get("matches", [])
+
+    winner_map = {"HOME_TEAM": "H", "AWAY_TEAM": "A", "DRAW": "D"}
+    rows = []
+    for m in matches:
+        winner = m["score"]["winner"]
+        if winner not in winner_map:
+            continue  # skip postponed/abandoned edge cases
+        rows.append({
+            "Date": m["utcDate"][:10],
+            "HomeTeam": normalize_team_name(m["homeTeam"]["name"]),
+            "AwayTeam": normalize_team_name(m["awayTeam"]["name"]),
+            "FTR": winner_map[winner],
+        })
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["Date"] = pd.to_datetime(df["Date"])
+    print(f"Fetched {len(df)} finished match(es) from football-data.org (fallback source)")
+    return df
+
+
 if __name__ == "__main__":
     print("Testing fixture fetch...")
     try:
