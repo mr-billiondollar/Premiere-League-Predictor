@@ -120,16 +120,21 @@ def fetch_current_season_results() -> pd.DataFrame:
     return df
 
 
-def fetch_finished_results(days_back: int = 21) -> pd.DataFrame:
+def fetch_finished_results(days_back: int = 60) -> pd.DataFrame:
     """
-    FALLBACK source for checking results, used only when
-    fetch_current_season_results() (football-data.co.uk) is unavailable.
-    football-data.org is a different, independent service -- it being
-    down at the exact same moment as football-data.co.uk is unlikely.
+    SECONDARY source for checking results -- called alongside
+    fetch_current_season_results() (football-data.co.uk), not just when
+    it throws an exception. football-data.co.uk has been observed to
+    return a successful response that's silently stale/incomplete (e.g.
+    only the first few matchdays of a season, weeks after more games
+    were actually played) -- a failure mode a try/except around
+    exceptions can't catch, since no exception is raised. Cross-checking
+    against this independent second source and taking the union catches
+    that case too.
 
-    We don't need shots data to check whether a W/D/L prediction was
-    correct, just the final result, so this simpler source is perfectly
-    sufficient for scoring even though it's not used for form/features.
+    days_back defaults to 60 rather than a tighter window since this
+    needs to comfortably cover the full season-to-date as it grows,
+    not just the last couple of weeks.
     """
     api_key = os.environ.get("FOOTBALL_DATA_API_KEY")
     if not api_key:

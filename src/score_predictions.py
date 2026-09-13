@@ -18,22 +18,46 @@ PREDICTIONS_LOG = PROJECT_ROOT / "data" / "predictions" / "predictions_log.csv"
 
 
 def get_results_with_fallback():
-    """Try football-data.co.uk first (also used for form/features elsewhere).
-    If it's down, fall back to football-data.org -- an independent service
-    that's unlikely to be down at the same moment. If BOTH fail, surface a
-    clear message instead of crashing with a raw traceback."""
+    """
+    Fetches from BOTH sources when possible and takes the UNION, rather
+    than only falling back to football-data.org when football-data.co.uk
+    throws an exception. This matters because football-data.co.uk has
+    been observed to return a successful 200 response containing only
+    the first few weeks of a season's results, weeks after more games
+    were actually played -- a silent staleness bug, not a connection
+    failure, so a plain try/except around exceptions never catches it.
+    Cross-checking against an independent second source and merging
+    catches this case too.
+    """
+    primary, fallback = None, None
+
     try:
-        return fetch_current_season_results()
+        primary = fetch_current_season_results()
     except Exception as e:
         print(f"\nPrimary source (football-data.co.uk) unavailable: {e}")
-        print("Trying fallback source (football-data.org)...")
-        try:
-            return fetch_finished_results()
-        except Exception as e2:
-            print(f"\nFallback source also unavailable: {e2}")
-            print("\nBoth result sources are down right now -- this is likely temporary.")
-            print("Your predictions log is unchanged. Try again in a few minutes.")
-            return None
+
+    try:
+        fallback = fetch_finished_results()
+    except Exception as e:
+        print(f"\nSecondary source (football-data.org) unavailable: {e}")
+
+    if primary is None and fallback is None:
+        print("\nBoth result sources are down right now -- this is likely temporary.")
+        print("Your predictions log is unchanged. Try again in a few minutes.")
+        return None
+    if primary is None:
+        return fallback
+    if fallback is None:
+        return primary
+
+    combined = pd.concat([primary, fallback], ignore_index=True)
+    combined = combined.drop_duplicates(subset=["Date", "HomeTeam", "AwayTeam"], keep="first")
+    if len(combined) > max(len(primary), len(fallback)):
+        print(f"\nNote: football-data.co.uk alone returned {len(primary)} matches, "
+              f"football-data.org alone returned {len(fallback)} -- combined to "
+              f"{len(combined)} unique matches. (This gap is exactly the silent-staleness "
+              f"issue this cross-check exists to catch.)")
+    return combined
 
 
 def main():
