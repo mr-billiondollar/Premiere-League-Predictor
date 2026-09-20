@@ -34,6 +34,7 @@ FEATURE_COLS = [
     "home_avg_shots", "home_avg_shots_on_target", "home_form_points_last5",
     "away_avg_goals_scored", "away_avg_goals_conceded",
     "away_avg_shots", "away_avg_shots_on_target", "away_form_points_last5",
+    "home_elo", "away_elo", "elo_diff",
 ]
 
 
@@ -81,6 +82,8 @@ def build_feature_row(home_team, away_team, team_form: pd.DataFrame, league_avg:
         row[f"{side}_avg_shots"] = stats["avg_shots"]
         row[f"{side}_avg_shots_on_target"] = stats["avg_shots_on_target"]
         row[f"{side}_form_points_last5"] = stats["form_points_last5"]
+        row[f"{side}_elo"] = stats["elo"]
+    row["elo_diff"] = row["home_elo"] - row["away_elo"]
     return row
 
 

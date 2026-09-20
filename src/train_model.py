@@ -32,6 +32,7 @@ FEATURE_COLS = [
     "home_avg_shots", "home_avg_shots_on_target", "home_form_points_last5",
     "away_avg_goals_scored", "away_avg_goals_conceded",
     "away_avg_shots", "away_avg_shots_on_target", "away_form_points_last5",
+    "home_elo", "away_elo", "elo_diff",
 ]
 TARGET_COL = "FTR"
 TEST_SEASONS = ["2024-25", "2025-26"]
