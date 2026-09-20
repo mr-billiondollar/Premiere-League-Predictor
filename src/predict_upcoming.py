@@ -21,6 +21,9 @@ sys.path.append(str(Path(__file__).resolve().parent))
 from data_loader import load_all_seasons
 from feature_engineering import compute_latest_team_form
 from fetch_live_data import fetch_upcoming_fixtures, fetch_current_season_results
+from dixon_coles import DixonColes
+
+DC_HALF_LIFE_DAYS = 365  # matches the value validated against the held-out test set
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
@@ -98,6 +101,11 @@ def main(days_ahead: int = 10):
     print("\nComputing each team's current rolling form...")
     team_form = compute_latest_team_form(combined)
 
+    print("\nFitting Dixon-Coles goal-scoring model "
+          f"(a third, differently-calibrated perspective -- takes ~30-40s)...")
+    dc_model = DixonColes(half_life_days=DC_HALF_LIFE_DAYS)
+    dc_model.fit(combined)
+
     # Fallback average for brand-new/cold-start teams. IMPORTANT: must be
     # restricted to recently-active teams -- team_form contains every club
     # that's played in the PL since 2000, including long-relegated sides
@@ -128,6 +136,15 @@ def main(days_ahead: int = 10):
         proba = xgb_unweighted.predict_proba(X)[0]
         proba_dict = {cls: round(p, 3) for cls, p in zip(label_encoder.classes_, proba)}
 
+        # Dixon-Coles: a differently-calibrated third perspective. Validated
+        # (see project notes) to have the best-calibrated draw probabilities
+        # of any approach tried -- Brier score 0.192 vs XGBoost's 0.207 raw /
+        # 0.199 calibrated. Its hard pick still rarely favors Draw (an honest
+        # ~25-28% usually can't out-vote a clear favorite's 45%+), so treat
+        # its PROBABILITIES as the trustworthy number, not just its label.
+        dc_p_home, dc_p_draw, dc_p_away = dc_model.predict_probs(fixture["HomeTeam"], fixture["AwayTeam"])
+        dc_pred = ["A", "D", "H"][max(range(3), key=lambda i: [dc_p_away, dc_p_draw, dc_p_home][i])]
+
         results.append({
             "prediction_made_on": datetime.now().date().isoformat(),
             "match_date": fixture["Date"].date().isoformat(),
@@ -138,6 +155,10 @@ def main(days_ahead: int = 10):
             "prob_home_win": proba_dict.get("H"),
             "prob_draw": proba_dict.get("D"),
             "prob_away_win": proba_dict.get("A"),
+            "predicted_dixon_coles": dc_pred,
+            "dc_prob_home_win": round(dc_p_home, 3),
+            "dc_prob_draw": round(dc_p_draw, 3),
+            "dc_prob_away_win": round(dc_p_away, 3),
             "actual_result": "",   # filled in later by score_predictions.py
         })
 
@@ -150,8 +171,10 @@ def main(days_ahead: int = 10):
     for _, r in results_df.iterrows():
         print(f"{r['match_date']}  {r['home_team']:<16} vs {r['away_team']:<16}  "
               f"-> {outcome_word[r['predicted_unweighted']]:<10} "
-              f"(H:{r['prob_home_win']:.0%} D:{r['prob_draw']:.0%} A:{r['prob_away_win']:.0%})  "
-              f"[balanced model says: {outcome_word[r['predicted_balanced']]}]")
+              f"(H:{r['prob_home_win']:.0%} D:{r['prob_draw']:.0%} A:{r['prob_away_win']:.0%})")
+        print(f"{'':>29}  [balanced model says: {outcome_word[r['predicted_balanced']]:<10}]  "
+              f"[Dixon-Coles: {outcome_word[r['predicted_dixon_coles']]:<10} "
+              f"(H:{r['dc_prob_home_win']:.0%} D:{r['dc_prob_draw']:.0%} A:{r['dc_prob_away_win']:.0%})]")
 
     # Append to the running predictions log
     PREDICTIONS_LOG.parent.mkdir(parents=True, exist_ok=True)

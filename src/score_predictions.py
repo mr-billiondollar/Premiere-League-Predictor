@@ -108,6 +108,27 @@ def main():
     print(f"XGBoost (unweighted): {played['correct_unweighted'].sum()}/{n} correct ({acc_unweighted:.1%})")
     print(f"XGBoost (balanced):   {played['correct_balanced'].sum()}/{n} correct ({acc_balanced:.1%})")
 
+    # Dixon-Coles was added partway through this project -- older logged
+    # predictions won't have it, so score it only over the rows that do
+    # rather than crashing or silently treating missing as wrong.
+    has_dc = "predicted_dixon_coles" in played.columns and played["predicted_dixon_coles"].notna()
+    if has_dc.any():
+        dc_played = played[has_dc]
+        dc_correct = (dc_played["predicted_dixon_coles"] == dc_played["actual_result"])
+        n_dc = len(dc_played)
+        print(f"Dixon-Coles:          {dc_correct.sum()}/{n_dc} correct ({dc_correct.mean():.1%})"
+              + (f"  [only {n_dc}/{n} predictions have a Dixon-Coles pick logged]" if n_dc < n else ""))
+        if n_dc >= 15:  # small samples make a calibration check misleading, not just noisy
+            actual_draw_rate = (dc_played["actual_result"] == "D").mean()
+            dc_avg_draw_prob = dc_played["dc_prob_draw"].mean()
+            xgb_avg_draw_prob = dc_played["prob_draw"].mean()
+            print(f"\nLive draw-probability calibration check (n={n_dc}):")
+            print(f"  Actual draw rate so far:        {actual_draw_rate:.1%}")
+            print(f"  Dixon-Coles' average estimate:  {dc_avg_draw_prob:.1%}")
+            print(f"  XGBoost's average estimate:     {xgb_avg_draw_prob:.1%}")
+            print("  (Whichever average sits closer to the actual rate is winning the "
+                  "calibration bet live, not just in the original backtest.)")
+
     print(f"\nMatch-by-match:")
     for _, r in played.iterrows():
         mark_u = "correct" if r["correct_unweighted"] else "wrong"
